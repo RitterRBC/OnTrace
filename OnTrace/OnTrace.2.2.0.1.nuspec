@@ -1,0 +1,45 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2012/06/nuspec.xsd">
+  <metadata>
+    <id>OnTrace</id>
+    <version>2.2.0.1</version>
+    <authors>Online Software AG</authors>
+    <owners>Online Software AG</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>PRESTIGEenterprise Logger</description>
+    <copyright>Copyright © Online Software AG 2007-2019</copyright>
+    <dependencies>
+      <group targetFramework=".NETFramework4.5.2">
+        <dependency id="Easy.Logger" version="3.7.3" exclude="Build,Analyzers" />
+        <dependency id="System.ServiceModel.Http" version="4.6.0" exclude="Build,Analyzers" />
+        <dependency id="log4net" version="2.0.8" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework=".NETFramework4.6.2">
+        <dependency id="Easy.Logger" version="3.7.3" exclude="Build,Analyzers" />
+        <dependency id="System.Configuration.ConfigurationManager" version="4.6.0" exclude="Build,Analyzers" />
+        <dependency id="System.ServiceModel.Http" version="4.6.0" exclude="Build,Analyzers" />
+        <dependency id="log4net" version="2.0.8" exclude="Build,Analyzers" />
+      </group>
+      <group targetFramework=".NETFramework4.7.2">
+        <dependency id="Easy.Logger" version="3.7.3" exclude="Build,Analyzers" />
+        <dependency id="System.Configuration.ConfigurationManager" version="4.6.0" exclude="Build,Analyzers" />
+        <dependency id="System.ServiceModel.Http" version="4.6.0" exclude="Build,Analyzers" />
+        <dependency id="log4net" version="2.0.8" exclude="Build,Analyzers" />
+      </group>
+    </dependencies>
+    <frameworkAssemblies>
+      <frameworkAssembly assemblyName="System.Configuration" targetFramework=".NETFramework4.5.2" />
+      <frameworkAssembly assemblyName="System.Web" targetFramework=".NETFramework4.5.2, .NETFramework4.6.2, .NETFramework4.7.2" />
+    </frameworkAssemblies>
+  </metadata>
+  <files>
+    <file src="Z:\TmpProjects\OnTraceStd\OnTrace\OnTrace\bin\Release\net452\OnTrace.dll" target="lib\net452\OnTrace.dll" />
+    <file src="Z:\TmpProjects\OnTraceStd\OnTrace\OnTrace\bin\Release\net462\OnTrace.dll" target="lib\net462\OnTrace.dll" />
+    <file src="Z:\TmpProjects\OnTraceStd\OnTrace\OnTrace\bin\Release\net472\OnTrace.dll" target="lib\net472\OnTrace.dll" />
+    <file src="Z:\TmpProjects\OnTraceStd\OnTrace\OnTrace\bin\Release\net452\OnTrace.pdb" target="lib\net452\OnTrace.pdb" />
+    <file src="Z:\TmpProjects\OnTraceStd\OnTrace\OnTrace\bin\Release\net462\OnTrace.pdb" target="lib\net462\OnTrace.pdb" />
+    <file src="Z:\TmpProjects\OnTraceStd\OnTrace\OnTrace\bin\Release\net472\OnTrace.pdb" target="lib\net472\OnTrace.pdb" />
+    <file src="Z:\TmpProjects\OnTraceStd\OnTrace\OnTrace\LICENSE_L4N.txt" target="" />
+    <file src="Z:\TmpProjects\OnTraceStd\OnTrace\OnTrace\NOTICE_L4N.txt" target="" />
+  </files>
+</package>
