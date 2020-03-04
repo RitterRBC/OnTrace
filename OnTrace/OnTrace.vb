@@ -2,8 +2,8 @@ Imports System.Configuration
 Imports System.IO
 Imports System.Globalization
 Imports log4net.Repository.Hierarchy
-Imports System.Net
 Imports System.ServiceModel
+Imports System.Net
 Imports Easy.Logger
 Imports log4net
 Imports log4net.Appender
@@ -226,7 +226,7 @@ Public Class OnTrace
             Try
                 strPath = Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location)
             Catch exNull As NullReferenceException
-                Debug.WriteLine("GetEntryAssembly couldn't be determined")
+                Trace.TraceError("GetEntryAssembly couldn't be determined")
             End Try
             Try
                 'In this case, we should have the Try for CallingAssembly
@@ -235,7 +235,7 @@ Public Class OnTrace
                     strPath = Path.GetDirectoryName(System.Reflection.Assembly.GetCallingAssembly().Location)
                 End If
             Catch exNull As NullReferenceException
-                Debug.WriteLine("FATAL - Neither GetEntryAssembly nor GetCallingAssembly could be determined")
+                Trace.TraceError("FATAL - Neither GetEntryAssembly nor GetCallingAssembly could be determined")
             End Try
 
         ElseIf httpContext IsNot Nothing Then
@@ -397,7 +397,7 @@ Public Class OnTrace
 
         Catch ex As Exception
             'We can't do anything else
-            Trace.WriteLine("Reconfigure, ERROR - re-configuring tracing: " & GetErrorStr(ex))
+            Trace.TraceError(GetErrorStr(ex, "Reconfigure, ERROR - re-configuring tracing"))
             Return False
         End Try
 
@@ -415,7 +415,7 @@ Public Class OnTrace
     Public Shared Function Reconfigure(ByVal configureTarget As enmConfigureTarget,
                                        ByVal strFileNameOrLogName As String,
                                        ByVal strFilePathOrApplicationName As String) As Boolean
-        Reconfigure(configureTarget, strFileNameOrLogName, strFilePathOrApplicationName, -1)
+        return Reconfigure(configureTarget, strFileNameOrLogName, strFilePathOrApplicationName, -1)
     End Function
 
     ''' <summary>
@@ -428,7 +428,7 @@ Public Class OnTrace
     ''' <remarks></remarks>
     Public Shared Function Reconfigure(ByVal configureTarget As enmConfigureTarget,
                                        ByVal lngTraceLevelDefault As Integer) As Boolean
-        Reconfigure(configureTarget, "", "", lngTraceLevelDefault)
+        return  Reconfigure(configureTarget, "", "", lngTraceLevelDefault)
     End Function
 
 #End Region
@@ -449,17 +449,71 @@ Public Class OnTrace
         'build the logger and appender name from the given paramaters
         strFilePath = GetStrFilePath(strFilePath, strFileName)
         Dim appenderName As String = Path.Combine(strFilePath, strFileName)
+#If DEBUG Then
+        Trace.WriteLine("OnTrace::TraceClear for path(" & strFilePath & ") filename(" & strFileName & ")")
+        Trace.WriteLine("OnTrace::TraceClear dynamicLogger  = " & appenderName)
+#End If
         'if logger does not exists it will be created else it will get the logger
         SyncLock (LockObj)
             Dim dynamicLog As log4net.ILog
             'if logger does not exists it will be created else it will get the logger
             dynamicLog = LogManager.GetLogger(appenderName)
+
             If dynamicLog IsNot Nothing Then
-                Dim dynLogAppender As IAppender = CType(dynamicLog.Logger, Logger).GetAppender(appenderName)
-                If dynLogAppender IsNot Nothing Then
-                    CType(dynamicLog.Logger, Logger).RemoveAppender(dynLogAppender)
-                    dynLogAppender.Close()
+#If DEBUG Then
+                Trace.WriteLine("OnTrace::TraceClear dynamicLogger(" & appenderName & ") contains following appenders:")
+                For Each app As IAppender In dynamicLog.Logger.Repository.GetAppenders()
+                    Trace.WriteLine("OnTrace::TraceClear.. " & app.Name)
+                Next
+
+#End If
+                If String.IsNullOrWhiteSpace(strFilePath) Then
+                    'THD 2020-02-27 leak
+                    Trace.WriteLine("!!!Warning OnTrace::TraceClear Missing path for dynamicLogger, remove all appender for '" & strFileName & "'!!!")
                 End If
+                For Each app As IAppender In dynamicLog.Logger.Repository.GetAppenders()
+                    'THD ist a asyncBufferAppender (logFile as Name) with a rollingFileAppender (timestamp_logFile)
+                    If app.Name.EndsWith(strFileName) Then
+#If DEBUG Then
+                        Trace.WriteLine("OnTrace::TraceClear: Remove Close = " & app.Name)
+#End If
+                        Try
+                            CType(dynamicLog.Logger, Logger).RemoveAppender(app)
+                        Catch expectedArgExc As ArgumentException
+                            'THD System.ArgumentException: Cannot remove the specified item because it was not found in the specified Collection. 
+                            'already removed?
+                        Catch ex As Exception
+                            Trace.TraceError(GetErrorStr(ex, "ERROR OnTrace::TraceClear: Remove: " & app.Name))
+                        End Try
+                        Try
+                            app.Close()
+                        Catch ex As Exception
+                            Trace.TraceError(GetErrorStr(ex, "ERROR OnTrace::TraceClear: Close: " & app.Name))
+                        End Try
+                    End If
+                Next
+                'Else
+                '    Dim dynLogAppender As IAppender = CType(dynamicLog.Logger, Logger).GetAppender(appenderName)
+                '    If dynLogAppender IsNot Nothing Then
+                '        Trace.WriteLine("OnTrace::TraceClear: Remove Close = " & dynLogAppender.Name)
+                '        Try
+                '            CType(dynamicLog.Logger, Logger).RemoveAppender(dynLogAppender)
+                '        Catch ex As Exception
+                '            Trace.TraceError(GetErrorStr(ex, "ERROR OnTrace::TraceClear: Remove: " & dynLogAppender.Name))
+                '        End Try
+                '        Try
+                '            dynLogAppender.Close()
+                '        Catch ex As Exception
+                '            Trace.TraceError(GetErrorStr(ex, "ERROR OnTrace::TraceClear: Close: " & dynLogAppender.Name))
+                '        End Try
+                '    End If
+                'End If
+                'Try
+                '    Trace.WriteLine("OnTrace::TraceClear: Shutdown " & appenderName)
+                '    dynamicLog.Logger.Repository.Shutdown()
+                'Catch ex As Exception
+                '    Trace.TraceError(GetErrorStr(ex, "ERROR OnTrace::TraceClear: Shutdown " & appenderName))
+                'End Try
             End If
         End SyncLock
     End Sub
@@ -470,6 +524,10 @@ Public Class OnTrace
                                         ByVal logType As enmTraceType
                                         )
         strFilePath = GetStrFilePath(strFilePath, strFileName)
+        If String.IsNullOrWhiteSpace(strFilePath) Then
+            Trace.WriteLine("!!!Warning OnTrace::TraceToTarget Missing path for dynamicLogger '" & strFileName & "', drop message = '" & strMessage & "'")
+            Exit Sub
+        End If
         If Not m_blnConfigured Then Configure()
         'check loglevel
         If Not lngLevelMessage = enmTraceLevel.Level_All AndAlso
@@ -492,8 +550,14 @@ Public Class OnTrace
                 Dim dynLogAppenders As IAppender = CType(dynamicLog.Logger, Logger).GetAppender(appenderName)
                 If dynLogAppenders IsNot Nothing Then
                     appender = dynLogAppenders
+#If DEBUG Then
+                    Trace.WriteLine("OnTrace::TraceToTarget get GetDynamicAppender = " & appenderName)
+#End If
                 Else
                     appender = GetDynamicAppender(appenderName)
+#If DEBUG Then
+                    Trace.WriteLine("OnTrace::TraceToTarget create GetDynamicAppender = " & appenderName)
+#End If
                 End If
 
                 Try
@@ -518,7 +582,7 @@ Public Class OnTrace
                             dynamicLog.Debug(strMessage)
                     End Select
                 Catch ex As Exception
-                    Trace.WriteLine("Error writing to Logfile " & appenderName & ": " & GetErrorStr(ex))
+                    Trace.TraceError(GetErrorStr(ex, "Error writing to Logfile " & appenderName))
                 End Try
             End SyncLock
         End If
@@ -542,6 +606,10 @@ Public Class OnTrace
         'check loglevel
         If Not lngLevelMessage = enmTraceLevel.Level_All AndAlso
         Not ((lngLevelMessage And m_lngTraceLevel) = lngLevelMessage) Then Exit Sub
+        If String.IsNullOrWhiteSpace(strFilePath) Then
+            Trace.WriteLine("!!!Warning OnTrace::TraceToTarget Missing path for dynamicLogger '" & strFileName & "', drop message.")
+            Exit Sub
+        End If
         'Dim processid As String = "[" & Process.GetCurrentProcess().Id.ToString("00000000") & "]"
         'Dim appenderName As String = Path.Combine(strFilePath, processid, strFileName)
         Dim info As New log4net.Core.LocationInfo(GetType(OnTrace))
@@ -560,8 +628,14 @@ Public Class OnTrace
                 Dim dynLogAppenders As IAppender = CType(dynamicLog.Logger, Logger).GetAppender(appenderName)
                 If dynLogAppenders IsNot Nothing Then
                     appender = dynLogAppenders
+#If DEBUG Then
+                    Trace.WriteLine("OnTrace::TraceToTarget get GetDynamicAppender = " & appenderName)
+#End If
                 Else
                     appender = GetDynamicAppender(appenderName)
+#If DEBUG Then
+                    Trace.WriteLine("OnTrace::TraceToTarget create GetDynamicAppender = " & appenderName)
+#End If
                 End If
 
                 Try
@@ -586,7 +660,7 @@ Public Class OnTrace
                             dynamicLog.Debug(strMessage)
                     End Select
                 Catch ex As Exception
-                    Trace.WriteLine("Error writing to Logfile " & appenderName & ": " & GetErrorStr(ex))
+                    Trace.TraceError(GetErrorStr(ex, "Error writing to Logfile " & appenderName))
                 End Try
             End SyncLock
         End If
@@ -606,7 +680,7 @@ Public Class OnTrace
 
         Dim timeStamp As String = DateTime.Now.ToString("yyyMMddHHmmssfff")
         Dim appender As RollingFileAppender = New RollingFileAppender() With {
-            .Name = timeStamp,
+            .Name = timeStamp & "_" & logFile,
             .File = logFile,
             .DatePattern = ".yyyy.MM.dd-HH.log",
             .RollingStyle = log4net.Appender.RollingFileAppender.RollingMode.Size,
@@ -760,7 +834,7 @@ Public Class OnTrace
                 'write to application log
                 LogApp.Error(strMessage)
             Catch ex As Exception
-                Trace.WriteLine("Error writing to AppLogger: " & GetErrorStr(ex))
+                Trace.TraceError(GetErrorStr(ex, "Error writing to AppLogger: "))
             End Try
         End If
         If m_blnIsEventLoggerEnabled AndAlso (enmTarget And enmTarget.EventLog) = enmTarget.EventLog Then
@@ -768,7 +842,7 @@ Public Class OnTrace
                 'write to eventlog
                 LogEvent.Error(strMessage)
             Catch ex As Exception
-                Trace.WriteLine("Error writing to EventLogger: " & GetErrorStr(ex))
+                Trace.TraceError(GetErrorStr(ex, "Error writing to EventLogger: "))
             End Try
         End If
         If m_blnIsStartupLoggerEnabled AndAlso (enmTarget And enmTarget.StartupLog) = enmTarget.StartupLog Then
@@ -776,7 +850,7 @@ Public Class OnTrace
                 'write to startup log
                 LogStartup.Error(strMessage)
             Catch ex As Exception
-                Trace.WriteLine("Error writing to StartupLogger: " & GetErrorStr(ex))
+                Trace.TraceError(GetErrorStr(ex, "Error writing to StartupLogger: "))
             End Try
         End If
     End Sub
@@ -809,7 +883,7 @@ Public Class OnTrace
                 'write to application log
                 LogApp.Error(strMessage)
             Catch ex As Exception
-                Trace.WriteLine("Error writing to AppLogger: " & GetErrorStr(ex))
+                Trace.TraceError(GetErrorStr(ex, "Error writing to AppLogger: "))
             End Try
         End If
         If m_blnIsEventLoggerEnabled AndAlso (enmTarget And enmTarget.EventLog) = enmTarget.EventLog Then
@@ -817,7 +891,7 @@ Public Class OnTrace
                 'write to eventlog
                 LogEvent.Error(strMessage)
             Catch ex As Exception
-                Trace.WriteLine("Error writing to EventLogger: " & GetErrorStr(ex))
+                Trace.TraceError(GetErrorStr(ex, "Error writing to EventLogger: "))
             End Try
         End If
         If m_blnIsStartupLoggerEnabled AndAlso (enmTarget And enmTarget.StartupLog) = enmTarget.StartupLog Then
@@ -825,7 +899,7 @@ Public Class OnTrace
                 'write to startup log
                 LogStartup.Error(strMessage)
             Catch ex As Exception
-                Trace.WriteLine("Error writing to StartupLogger: " & GetErrorStr(ex))
+                Trace.TraceError(GetErrorStr(ex, "Error writing to StartupLogger: "))
             End Try
         End If
 
@@ -929,7 +1003,7 @@ Public Class OnTrace
                 'write to application log
                 LogApp.Info(strMessage)
             Catch ex As Exception
-                Trace.WriteLine("Error writing to AppLogger: " & GetErrorStr(ex))
+                Trace.TraceError(GetErrorStr(ex, "Error writing to AppLogger: "))
             End Try
         End If
         If m_blnIsEventLoggerEnabled AndAlso (enmTarget And enmTarget.EventLog) = enmTarget.EventLog Then
@@ -937,7 +1011,7 @@ Public Class OnTrace
                 'write to eventlog
                 LogEvent.Info(strMessage)
             Catch ex As Exception
-                Trace.WriteLine("Error writing to EventLogger: " & GetErrorStr(ex))
+                Trace.TraceError(GetErrorStr(ex, "Error writing to EventLogger: "))
             End Try
         End If
         If m_blnIsStartupLoggerEnabled AndAlso (enmTarget And enmTarget.StartupLog) = enmTarget.StartupLog Then
@@ -945,7 +1019,7 @@ Public Class OnTrace
                 'write to startup log
                 LogStartup.Info(strMessage)
             Catch ex As Exception
-                Trace.WriteLine("Error writing to StartupLogger: " & GetErrorStr(ex))
+                Trace.TraceError(GetErrorStr(ex, "Error writing to StartupLogger: "))
             End Try
         End If
     End Sub
@@ -976,7 +1050,7 @@ Public Class OnTrace
                 'write to application log
                 LogApp.Info(strMessage)
             Catch ex As Exception
-                Trace.WriteLine("Error writing to AppLogger: " & GetErrorStr(ex))
+                Trace.TraceError(GetErrorStr(ex, "Error writing to AppLogger: "))
             End Try
         End If
         If m_blnIsEventLoggerEnabled AndAlso (enmTarget And enmTarget.EventLog) = enmTarget.EventLog Then
@@ -984,7 +1058,7 @@ Public Class OnTrace
                 'write to eventlog
                 LogEvent.Info(strMessage)
             Catch ex As Exception
-                Trace.WriteLine("Error writing to EventLogger: " & GetErrorStr(ex))
+                Trace.TraceError(GetErrorStr(ex, "Error writing to EventLogger: "))
             End Try
         End If
         If m_blnIsStartupLoggerEnabled AndAlso (enmTarget And enmTarget.StartupLog) = enmTarget.StartupLog Then
@@ -992,7 +1066,7 @@ Public Class OnTrace
                 'write to startup log
                 LogStartup.Info(strMessage)
             Catch ex As Exception
-                Trace.WriteLine("Error writing to StartupLogger: " & GetErrorStr(ex))
+                Trace.TraceError(GetErrorStr(ex, "Error writing to StartupLogger: "))
             End Try
         End If
 
@@ -1095,7 +1169,7 @@ Public Class OnTrace
                 'write to application log
                 LogApp.Warn(strMessage)
             Catch ex As Exception
-                Trace.WriteLine("Error writing to AppLogger: " & GetErrorStr(ex))
+                Trace.TraceError(GetErrorStr(ex, "Error writing to AppLogger: "))
             End Try
         End If
         If m_blnIsEventLoggerEnabled AndAlso (enmTarget And enmTarget.EventLog) = enmTarget.EventLog Then
@@ -1103,7 +1177,7 @@ Public Class OnTrace
                 'write to eventlog
                 LogEvent.Warn(strMessage)
             Catch ex As Exception
-                Trace.WriteLine("Error writing to EventLogger: " & GetErrorStr(ex))
+                Trace.TraceError(GetErrorStr(ex, "Error writing to EventLogger: "))
             End Try
         End If
         If m_blnIsStartupLoggerEnabled AndAlso (enmTarget And enmTarget.StartupLog) = enmTarget.StartupLog Then
@@ -1111,7 +1185,7 @@ Public Class OnTrace
                 'write to startup log
                 LogStartup.Warn(strMessage)
             Catch ex As Exception
-                Trace.WriteLine("Error writing to StartupLogger: " & GetErrorStr(ex))
+                Trace.TraceError(GetErrorStr(ex, "Error writing to StartupLogger: "))
             End Try
         End If
     End Sub
@@ -1141,7 +1215,7 @@ Public Class OnTrace
                 'write to application log
                 LogApp.Warn(strMessage)
             Catch ex As Exception
-                Trace.WriteLine("Error writing to AppLogger: " & GetErrorStr(ex))
+                Trace.TraceError(GetErrorStr(ex, "Error writing to AppLogger: "))
             End Try
         End If
         If m_blnIsEventLoggerEnabled AndAlso (enmTarget And enmTarget.EventLog) = enmTarget.EventLog Then
@@ -1149,7 +1223,7 @@ Public Class OnTrace
                 'write to eventlog
                 LogEvent.Warn(strMessage)
             Catch ex As Exception
-                Trace.WriteLine("Error writing to EventLogger: " & GetErrorStr(ex))
+                Trace.TraceError(GetErrorStr(ex, "Error writing to EventLogger: "))
             End Try
         End If
         If m_blnIsStartupLoggerEnabled AndAlso (enmTarget And enmTarget.StartupLog) = enmTarget.StartupLog Then
@@ -1157,7 +1231,7 @@ Public Class OnTrace
                 'write to startup log
                 LogStartup.Warn(strMessage)
             Catch ex As Exception
-                Trace.WriteLine("Error writing to StartupLogger: " & GetErrorStr(ex))
+                Trace.TraceError(GetErrorStr(ex, "Error writing to StartupLogger: "))
             End Try
         End If
 
@@ -1261,21 +1335,21 @@ Public Class OnTrace
             Try
                 LogApp.Fatal(strMessage)
             Catch ex1 As Exception
-                Trace.TraceError("Error writing to AppLogger: " & GetErrorStr(ex1))
+                Trace.TraceError(GetErrorStr(ex1, "Error writing to AppLogger: "))
             End Try
         End If
         If m_blnIsEventLoggerEnabled AndAlso (enmTarget And enmTarget.EventLog) = enmTarget.EventLog Then
             Try
                 LogEvent.Fatal(strMessage)
             Catch ex1 As Exception
-                Trace.WriteLine("Error writing to EventLogger: " & GetErrorStr(ex1))
+                Trace.TraceError(GetErrorStr(ex1, "Error writing to EventLogger: "))
             End Try
         End If
         If m_blnIsStartupLoggerEnabled AndAlso (enmTarget And enmTarget.StartupLog) = enmTarget.StartupLog Then
             Try
                 LogStartup.Fatal(strMessage)
             Catch ex1 As Exception
-                Trace.WriteLine("Error writing to StartupLogger: " & GetErrorStr(ex1))
+                Trace.TraceError(GetErrorStr(ex1, "Error writing to StartupLogger: "))
             End Try
         End If
     End Sub
@@ -1294,21 +1368,21 @@ Public Class OnTrace
             Try
                 LogApp.Fatal(strMessage)
             Catch ex1 As Exception
-                Trace.TraceError("Error writing to AppLogger: " & GetErrorStr(ex1))
+                Trace.TraceError(GetErrorStr(ex1, "Error writing to AppLogger: "))
             End Try
         End If
         If m_blnIsEventLoggerEnabled AndAlso (enmTarget And enmTarget.EventLog) = enmTarget.EventLog Then
             Try
                 LogEvent.Fatal(strMessage)
             Catch ex1 As Exception
-                Trace.WriteLine("Error writing to EventLogger: " & GetErrorStr(ex1))
+                Trace.TraceError(GetErrorStr(ex1, "Error writing to EventLogger: "))
             End Try
         End If
         If m_blnIsStartupLoggerEnabled AndAlso (enmTarget And enmTarget.StartupLog) = enmTarget.StartupLog Then
             Try
                 LogStartup.Fatal(strMessage)
             Catch ex1 As Exception
-                Trace.WriteLine("Error writing to StartupLogger: " & GetErrorStr(ex1))
+                Trace.TraceError(GetErrorStr(ex1, "Error writing to StartupLogger: "))
             End Try
         End If
     End Sub
@@ -1374,7 +1448,7 @@ Public Class OnTrace
         Try
             'GN 17.07.06
             'Show the errors in debugging mode, too
-#if DEBUG
+#If DEBUG Then
             Debug.WriteLine(strMessage)
 #End If
 #If TIME Then
@@ -1398,7 +1472,7 @@ Public Class OnTrace
                     'write to application log
                     LogApp.Debug(strMessage)
                 Catch ex As Exception
-                    Trace.WriteLine("Error writing to AppLogger: " & GetErrorStr(ex))
+                    Trace.TraceError(GetErrorStr(ex, "Error writing to AppLogger: "))
                 End Try
             End If
             If m_blnIsEventLoggerEnabled AndAlso (enmTarget And enmTarget.EventLog) = enmTarget.EventLog Then
@@ -1406,7 +1480,7 @@ Public Class OnTrace
                     'write to eventlog
                     LogEvent.Debug(strMessage)
                 Catch ex As Exception
-                    Trace.WriteLine("Error writing to EventLogger: " & GetErrorStr(ex))
+                    Trace.TraceError(GetErrorStr(ex, "Error writing to EventLogger: "))
                 End Try
             End If
             If m_blnIsStartupLoggerEnabled AndAlso (enmTarget And enmTarget.StartupLog) = enmTarget.StartupLog Then
@@ -1414,13 +1488,13 @@ Public Class OnTrace
                     'write to startup log
                     LogStartup.Debug(strMessage)
                 Catch ex As Exception
-                    Trace.WriteLine("Error writing to StartupLogger: " & GetErrorStr(ex))
+                    Trace.TraceError(GetErrorStr(ex, "Error writing to StartupLogger: "))
                 End Try
             End If
 
         Catch ex As Exception
             'We can't do anything else
-            Trace.WriteLine("WriteLine, ERROR - writing '" & strMessage.ToString() & "' to logfile!!!!")
+            Trace.TraceError(GetErrorStr(ex, "WriteLine, ERROR - writing '" & strMessage.ToString() & "' to logfile!!!!"))
         End Try
     End Sub
     ''' <summary>
@@ -1441,7 +1515,7 @@ Public Class OnTrace
         Try
             'GN 17.07.06
             'Show the errors in debugging mode, too
-#if DEBUG
+#If DEBUG Then
             Debug.WriteLine(strMessage)
 #End If
 #If TIME Then
@@ -1464,7 +1538,7 @@ Public Class OnTrace
                     'write to application log
                     LogApp.Debug(strMessage)
                 Catch ex As Exception
-                    Trace.WriteLine("Error writing to AppLogger: " & GetErrorStr(ex))
+                    Trace.TraceError(GetErrorStr(ex, "Error writing to AppLogger: "))
                 End Try
             End If
             If m_blnIsEventLoggerEnabled AndAlso (enmTarget And enmTarget.EventLog) = enmTarget.EventLog Then
@@ -1472,7 +1546,7 @@ Public Class OnTrace
                     'write to eventlog
                     LogEvent.Debug(strMessage)
                 Catch ex As Exception
-                    Trace.WriteLine("Error writing to EventLogger: " & GetErrorStr(ex))
+                    Trace.TraceError(GetErrorStr(ex, "Error writing to EventLogger: "))
                 End Try
             End If
             If m_blnIsStartupLoggerEnabled AndAlso (enmTarget And enmTarget.StartupLog) = enmTarget.StartupLog Then
@@ -1480,13 +1554,13 @@ Public Class OnTrace
                     'write to startup log
                     LogStartup.Debug(strMessage)
                 Catch ex As Exception
-                    Trace.WriteLine("Error writing to StartupLogger: " & GetErrorStr(ex))
+                    Trace.TraceError(GetErrorStr(ex, "Error writing to StartupLogger: "))
                 End Try
             End If
 
         Catch ex As Exception
             'We can't do anything else
-            Trace.WriteLine("WriteLine, ERROR - writing '" & strMessage.ToString() & "' to logfile!!!!")
+            Trace.TraceError(GetErrorStr(ex, "WriteLine, ERROR - writing '" & strMessage.ToString() & "' to logfile!!!!"))
         End Try
     End Sub
     ''' <summary>
@@ -1625,7 +1699,7 @@ Public Class OnTrace
 
         Catch ex As Exception
             'We cant do anything else
-            Trace.WriteLine("WriteLineLevel, ERROR - writing '" & strMessage.ToString() & "' to logfile!!!!")
+            Trace.TraceError(GetErrorStr(ex, "WriteLine, ERROR - writing '" & strMessage.ToString() & "' to logfile!!!!"))
         End Try
     End Sub
     ''' <summary>
@@ -1665,7 +1739,7 @@ Public Class OnTrace
 
         Catch ex As Exception
             'We cant do anything else
-            Trace.WriteLine("WriteLineLevel, ERROR - writing '" & strMessage.ToString() & "' to logfile!!!!")
+            Trace.TraceError(GetErrorStr(ex, "WriteLine, ERROR - writing '" & strMessage.ToString() & "' to logfile!!!!"))
         End Try
     End Sub
 
@@ -1708,7 +1782,7 @@ Public Class OnTrace
             End If
 
         Catch ex As Exception
-            Trace.WriteLine("GetAppenderNamesForLogger, error: " & GetErrorStr(ex))
+            Trace.TraceError(GetErrorStr(ex, "GetAppenderNamesForLogger, error: "))
         End Try
 
         Return astrValues
@@ -1762,7 +1836,7 @@ Public Class OnTrace
                 End If
             End If
         Catch ex As Exception
-            Trace.WriteLine("GetLogFileName (Configuration for OnTrace is missing?), error: " & GetErrorStr(ex))
+            Trace.TraceError(GetErrorStr(ex, "GetLogFileName (Configuration for OnTrace is missing?)"))
         End Try
 
         'return the directory

@@ -4,18 +4,19 @@
     <RootNamespace></RootNamespace>
     <TargetFrameworks>net452;net462;net472</TargetFrameworks>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
-    <Version>2.2.0.1</Version>
+    <Version>2.2.0.2</Version>
     <Authors>Online Software AG</Authors>
     <Description>PRESTIGEenterprise Logger</Description>
-    <Copyright>Copyright © Online Software AG 2007-2019</Copyright>
+    <Copyright>Copyright © Online Software AG 2007-2020</Copyright>
     <PackageTags />
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <SignAssembly>false</SignAssembly>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Easy.Logger" Version="3.7.3" />
+    <PackageReference Include="Easy.Logger" Version="3.7.4" />
     <PackageReference Include="log4net" Version="2.0.8" />
-    <PackageReference Include="System.ServiceModel.Http" Version="4.6.0" />
+    <PackageReference Include="System.ServiceModel.Http" Version="4.7.0" />
   </ItemGroup>
 
   <ItemGroup>
