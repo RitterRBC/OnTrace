@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <RootNamespace></RootNamespace>
@@ -8,15 +8,30 @@
     <Authors>Online Software AG</Authors>
     <Description>PRESTIGEenterprise Logger</Description>
     <Copyright>Copyright © Online Software AG 2007-2020</Copyright>
-    <PackageTags />
+    <PackageId>OnTrace</PackageId>
+    <PackageTags>logging;log4net;trace;logger</PackageTags>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/Online-Software-AG/OnTrace</RepositoryUrl>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <SignAssembly>false</SignAssembly>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Easy.Logger" Version="3.7.4" />
-    <PackageReference Include="log4net" Version="2.0.8" />
     <PackageReference Include="System.ServiceModel.Http" Version="4.7.0" />
+    <!-- Lets the old .NET Framework target frameworks be restored/built on machines without a
+         locally installed .NET Framework SDK (e.g. CI agents). -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- log4net 3.x supports .NET Framework 4.6.2+ and fixes the known advisories. -->
+  <!-- net452 is still stuck on the 2.0.x line because log4net 3.x requires >= net462. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net452'">
+    <PackageReference Include="log4net" Version="2.0.15" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net462' Or '$(TargetFramework)' == 'net472'">
+    <PackageReference Include="log4net" Version="3.3.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -40,11 +55,19 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="LICENSE_L4N.txt">
+    <None Include="LICENSE_L4N.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <Pack>true</Pack>
+      <PackagePath>\</PackagePath>
     </None>
-    <None Update="NOTICE_L4N.txt">
+    <None Include="NOTICE_L4N.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <Pack>true</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+    <None Include="..\README.md">
+      <Pack>true</Pack>
+      <PackagePath>\</PackagePath>
     </None>
   </ItemGroup>
 
